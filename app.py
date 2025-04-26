@@ -10,7 +10,7 @@ app = Flask(__name__)
 
 # Define model repo and parameters
 model_name = "sandbox338/swahili-hatespeech"
-model_directory = "swahili_hate_speech_model"  
+model_directory = "swahili_hate_speech_model"  # The directory containing your model
 
 # Download the model files to a local directory
 try:
@@ -20,12 +20,12 @@ try:
     # Download specific model files
     model_file = hf_hub_download(
         repo_id=model_name,
-        filename=f"{model_directory}/model.safetensors",  
+        filename=f"{model_directory}/pytorch_model.bin",  
         repo_type="model",
         local_dir="downloaded_model"
     )
     
-    # Download tokenizer files 
+    # Download tokenizer files (assuming they exist)
     tokenizer_files = ["config.json", "tokenizer_config.json", "vocab.txt", "special_tokens_map.json"]
     for file in tokenizer_files:
         try:
