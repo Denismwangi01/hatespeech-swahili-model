@@ -1,23 +1,69 @@
 from flask import Flask, render_template, request, jsonify
-from transformers import AutoModelForSequenceClassification, AutoTokenizer
+from transformers import AutoModelForSequenceClassification, AutoTokenizer, PreTrainedModel
 import torch
 import re
 import string
+import os
+from huggingface_hub import hf_hub_download
 
 app = Flask(__name__)
 
-# Load the model and tokenizer
-model_path = "./swahili_hate_speech_model"
-model = AutoModelForSequenceClassification.from_pretrained(model_path)
-tokenizer = AutoTokenizer.from_pretrained(model_path)
+# Define model repo and parameters
+model_name = "sandbox338/swahili-hatespeech"
+model_directory = "swahili_hate_speech_model"  
 
-# Class labels mapping (adjust according to your dataset)
+# Download the model files to a local directory
+try:
+    # Create a temporary directory to store the model
+    os.makedirs("downloaded_model", exist_ok=True)
+    
+    # Download specific model files
+    model_file = hf_hub_download(
+        repo_id=model_name,
+        filename=f"{model_directory}/model.safetensors",  
+        repo_type="model",
+        local_dir="downloaded_model"
+    )
+    
+    # Download tokenizer files 
+    tokenizer_files = ["config.json", "tokenizer_config.json", "vocab.txt", "special_tokens_map.json"]
+    for file in tokenizer_files:
+        try:
+            hf_hub_download(
+                repo_id=model_name,
+                filename=f"{model_directory}/{file}",
+                repo_type="model",
+                local_dir="downloaded_model"
+            )
+        except Exception:
+            print(f"Could not find {file}, continuing...")
+    
+    # Load model and tokenizer from the downloaded files
+    model = torch.load("downloaded_model/pytorch_model.bin")
+    tokenizer = AutoTokenizer.from_pretrained("downloaded_model")
+    
+except Exception as e:
+    print(f"Error loading model: {str(e)}")
+    print("Attempting alternative loading method...")
+    # Try direct loading if structure allows
+    model = AutoModelForSequenceClassification.from_pretrained(
+        model_name, 
+        subfolder=model_directory,
+        ignore_mismatched_sizes=True
+    )
+    tokenizer = AutoTokenizer.from_pretrained(
+        model_name,
+        subfolder=model_directory
+    )
+
+# Class labels mapping
 class_labels = {
     0: "Non-hate speech",
     1: "Political hate speech",
     2: "Offensive language"
 }
 
+# Rest of your code remains the same
 def clean_text(text):
     text = text.lower()
     text = re.sub(r'http\S+|www\S+', '', text)
@@ -46,10 +92,16 @@ def classify():
         
         # Get predictions
         with torch.no_grad():
-            outputs = model(**inputs)
+            # Adjust based on your model's interface
+            if isinstance(model, PreTrainedModel):
+                outputs = model(**inputs)
+                logits = outputs.logits
+            else:
+                # For custom models
+                outputs = model(inputs)
+                logits = outputs
         
         # Process predictions
-        logits = outputs.logits
         probabilities = torch.softmax(logits, dim=1).tolist()[0]
         predicted_class = torch.argmax(logits, dim=1).item()
         
@@ -73,5 +125,3 @@ def classify():
 
 if __name__ == '__main__':
     app.run(debug=True)
-    
-    
