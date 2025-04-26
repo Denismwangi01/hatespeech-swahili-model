@@ -1,0 +1,77 @@
+from flask import Flask, render_template, request, jsonify
+from transformers import AutoModelForSequenceClassification, AutoTokenizer
+import torch
+import re
+import string
+
+app = Flask(__name__)
+
+# Load the model and tokenizer
+model_path = "./swahili_hate_speech_model"
+model = AutoModelForSequenceClassification.from_pretrained(model_path)
+tokenizer = AutoTokenizer.from_pretrained(model_path)
+
+# Class labels mapping (adjust according to your dataset)
+class_labels = {
+    0: "Non-hate speech",
+    1: "Political hate speech",
+    2: "Offensive language"
+}
+
+def clean_text(text):
+    text = text.lower()
+    text = re.sub(r'http\S+|www\S+', '', text)
+    text = re.sub(r'\busername_\w+\b', '', text)
+    text = re.sub(r'#\w+', '', text)
+    text = text.translate(str.maketrans('', '', string.punctuation))
+    text = re.sub(r'\s+', ' ', text).strip()
+    return text
+
+@app.route('/')
+def home():
+    return render_template('index.html')
+
+@app.route('/classify', methods=['POST'])
+def classify():
+    try:
+        # Get text from form
+        text = request.form.get('text')
+        
+        if not text:
+            return jsonify({"error": "No text provided"}), 400
+        
+        # Clean and tokenize the text
+        cleaned_text = clean_text(text)
+        inputs = tokenizer(cleaned_text, return_tensors="pt", padding=True, truncation=True, max_length=128)
+        
+        # Get predictions
+        with torch.no_grad():
+            outputs = model(**inputs)
+        
+        # Process predictions
+        logits = outputs.logits
+        probabilities = torch.softmax(logits, dim=1).tolist()[0]
+        predicted_class = torch.argmax(logits, dim=1).item()
+        
+        # Prepare response
+        response = {
+            "text": text,
+            "cleaned_text": cleaned_text,
+            "predicted_class": class_labels[predicted_class],
+            "class_id": predicted_class,
+            "probabilities": {
+                class_labels[0]: probabilities[0],
+                class_labels[1]: probabilities[1],
+                class_labels[2]: probabilities[2]
+            }
+        }
+        
+        return jsonify(response)
+    
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+if __name__ == '__main__':
+    app.run(debug=True)
+    
+    
